@@ -1,0 +1,139 @@
+function [] = no_channel_coding(Name,p)
+    % to read a video and store information in 'a'
+    % clc
+    % clear all
+    % Name='highway.avi';
+    % p=0.1;
+    obj = VideoReader(Name);
+    a = read(obj);
+
+    % to get the number of frames in the video
+    Frame = get(obj,'NumberOfFrames');
+
+    % to extract the frames of the video
+    for i = 1:Frame
+        I(i).cdata = a(:,:,:,i);
+    end
+
+    % to generate a new video with the same size as the original video
+    s = size(I(1).cdata);
+    mov(1:Frame) = struct('cdata',zeros(s(1),s(2),s(3),'uint8'),'colormap',[]);
+
+    % to extract the data of each colour in each frame
+    for i = 1:Frame
+        %Red Components of the Frame
+        R(:,:,i) = I(i).cdata(:,:,1);
+
+        %Green Components of the Frame
+        G(:,:,i) = I(i).cdata(:,:,2);
+
+        %Blue Components of the Frame
+        B(:,:,i) = I(i).cdata(:,:,3);
+    end
+
+    % to convert the data from unsigned integers to double
+    Rdouble = double(R);
+    Gdouble = double(G);
+    Bdouble = double(B);
+
+    % to convert couble value to binary
+    Rbin = de2bi(Rdouble);
+    Gbin = de2bi(Gdouble);
+    Bbin = de2bi(Bdouble);
+
+    % resahpe the matrix of binary data ( 8 column ) into a stream of
+    % binary bits ( 1 row array )
+    Rbin = reshape(Rbin,1,[]);
+    Gbin = reshape(Gbin,1,[]);
+    Bbin = reshape(Bbin,1,[]);
+    
+    %  concatenate the all the 3 colour components ( from all frames )
+    % in order to get from it the totel number of packets 
+    Packets = [Rbin(:,:) Gbin(:,:) Bbin(:,:)];
+    
+    % reshape the bit stream of 3 colours to make each packet of length
+    % 1024 bit ( each row represents one packet of length 1024 which is the
+    % number of columns )
+    Packets_Reshaped = reshape(Packets,[],1024);
+    
+    % to get the number of rows and columns of (packets_reshaped ) matrix which contains all the packets
+    n_packet = size(Packets_Reshaped);
+    
+   
+    % since size function resturns number rows and columns then (n_packet(1)) below means thr number of rows only of Packets_Reshaped matrix .
+    % so we will loop from 1 until the length of rows of Packets_Reshaped matrix .
+    for i = 1:n_packet(1)
+        
+        % loop to get packet by packet and store it in encoded
+        encoded = Packets_Reshaped(i,:);
+        
+        % bsc : binary symmetric channel 
+        % adds error to each packet using given probability of error
+        Errored = bsc(encoded,p);
+        
+        
+        % then store the packet with error with no channel encoding in
+        % Final_Decoded array
+        Decoded(i,:) = Errored;
+        
+    end
+    
+    % reshape to a binary stream again instead of matrix
+    Decoded = reshape(Decoded,1,[]);
+    
+    % to get length of each colour component we divide the total length of
+    % binary stream by 3
+    Decoded_J = length(Decoded)/3;
+   
+    % then seprate each colour in certain array in order ( red,green then
+    % blue)
+    Final_Red_Decoded = Decoded(1,1:Decoded_J);
+    Final_Green_Decoded =Decoded(1,Decoded_J+1:2*Decoded_J);
+    Final_Blue_Decoded = Decoded(1,2*Decoded_J+1:length(Decoded));
+
+    % then reshape to convert binary stream into binary matrix of 8 columns ( 8 : number of bits per pixal ) 
+    Final_Red_bin = reshape(Final_Red_Decoded,[],8);
+    Final_Green_bin = reshape(Final_Green_Decoded,[],8);
+    Final_Blue_bin = reshape(Final_Blue_Decoded,[],8);
+
+    % convert from binary to double
+    Final_Red_double = bi2de(Final_Red_bin);
+    Final_Green_double = bi2de(Final_Green_bin);
+    Final_Blue_double = bi2de(Final_Blue_bin);
+
+    % convert from double to unsigned integers
+    Final_Red_uint8 = uint8(Final_Red_double);
+    Final_Green_uint8 = uint8(Final_Green_double);
+    Final_Blue_uint8 = uint8(Final_Blue_double);
+
+    % then convert each colour into frame of size ( 176'length' * 144'width' ) and their number equal number of frames of original videos 
+    Final_Red = reshape(Final_Red_uint8,s(1),s(2),Frame);
+    Final_Green = reshape(Final_Green_uint8,s(1),s(2),Frame);
+    Final_Blue = reshape(Final_Blue_uint8,s(1),s(2),Frame);
+
+    % create new video with the recieved frames ( each frame will contain the 3 colours ) 
+    for i = 1:Frame
+        mov(1,i).cdata(:,:,1) = Final_Red(:,:,i);
+        mov(1,i).cdata(:,:,2) = Final_Green(:,:,i);
+        mov(1,i).cdata(:,:,3) = Final_Blue(:,:,i);
+    end
+if(p==0.001)
+    % to play the vod
+    writerObj = VideoWriter('nochannelVideo001.avi');
+    open(writerObj);
+    writeVideo(writerObj, mov);
+    close(writerObj);
+    % Display video
+    implay('nochannelVideo001.avi');
+end
+if(p==0.1)
+    % to play the vod
+    writerObj = VideoWriter('nochannelVideo1.avi');
+    open(writerObj);
+    writeVideo(writerObj, mov);
+    close(writerObj);
+    % Display video
+    implay('nochannelVideo1.avi');
+end
+   
+end

@@ -1,0 +1,144 @@
+function [p_of_BE] = channel_coding(Name,p)
+    % clc
+    % clear all
+    % Name='highway.avi';
+    % p=0.001;
+    % to read a video and store information in 'a'
+    obj = VideoReader(Name);
+    a = read(obj);
+    % to get the number of frames in the video
+    Frames = get(obj,'NumberOfFrames');
+    %To extract the frames of the video so you can work on them
+    for i = 1:Frames
+            I(i).cdata = a(:,:,:,i);
+    end
+    %generate a new video with the same size as the original video 
+    s = size(I(1).cdata);
+    mov(1:Frames) = struct('cdata',zeros(s(1),s(2),s(3),'uint8'),'colormap',[]);
+    
+    % loop on frames
+    for Frame = 1:30
+        % to extract the data of each colour in each frame
+        R=I(Frame).cdata(:,:,1);
+        G=I(Frame).cdata(:,:,2); 
+        B=I(Frame).cdata(:,:,3);
+    
+        % convert unsigned integers to double and then from double to binary
+        Rdouble = double(R);
+        Gdouble = double(G);
+        Bdouble = double(B);
+    
+        Rbin = de2bi(Rdouble);
+        Gbin = de2bi(Gdouble);
+        Bbin = de2bi(Bdouble);
+        %  concatenate the all the 3 colour components ( from all frames )
+        % in order to get from it the totel number of packets 
+        Packets((25344*(Frame-1)+1):Frame*25344,:) = [Rbin(:,:) Gbin(:,:) Bbin(:,:)];
+        
+        % reshape from 25344x8 to 1x202752
+        R1=reshape(Rbin,[1,202752]);
+        G1=reshape(Gbin,[1,202752]);
+        B1=reshape(Bbin,[1,202752]);
+    
+        % /1024 to get number of packets in every colour
+        n_packet=202752/1024;
+        % get the size of every packet to be [n_packet,1024]
+        packetR1=reshape(R1,[n_packet,1024]);
+        packetG1=reshape(G1,[n_packet,1024]);
+        packetB1=reshape(B1,[n_packet,1024]);
+    
+        % to build the trellis
+        trellis = poly2trellis(7,[171 133]);
+        %loop on number of packets
+        for i=1:n_packet
+            %To encode a certain packet
+            encodedR(i,:)=convenc(packetR1(i,:), trellis);
+            encodedG(i,:)=convenc(packetG1(i,:), trellis);
+            encodedB(i,:)=convenc(packetB1(i,:), trellis);
+    
+            %To apply a certain probability of error p to an encoded packet
+            ErroredR(i,:)=bsc(encodedR(i,:),p);
+            ErroredG(i,:)=bsc(encodedG(i,:),p);
+            ErroredB(i,:)=bsc(encodedB(i,:),p);
+    
+            %To decode a received packet
+            decodedR(i,:)=vitdec(ErroredR(i,:),trellis,35,'trunc','hard');
+            decodedG(i,:)=vitdec(ErroredG(i,:),trellis,35,'trunc','hard');
+            decodedB(i,:)=vitdec(ErroredB(i,:),trellis,35,'trunc','hard');  
+    
+        end
+       
+        
+        % ( biterr ) : is a built in function take the original packets without
+        %  error and the decoded which contain error and return the number of
+        %  bits in error and bit error rate
+        [numberR BERR] = biterr(packetR1,decodedR);
+        [numberG BERG] = biterr(packetG1,decodedG);
+        [numberB BERB] = biterr(packetB1,decodedB);
+        %collect numbers of bits in error in every colour
+        TOTAL(Frame) =numberR+numberG+numberB;
+        
+     if(p==0.001 || p==0.1)
+        % then reshape to convert binary stream into binary matrix of 8 columns ( 8 : number of bits per pixal ) 
+        Final_Red_bin = reshape(decodedR,[],8);
+        Final_Green_bin = reshape(decodedG,[],8);
+        Final_Blue_bin = reshape(decodedB,[],8);
+    
+        % convert from binary to double
+        Final_Red_double = bi2de(Final_Red_bin);
+        Final_Green_double = bi2de(Final_Green_bin);
+        Final_Blue_double = bi2de(Final_Blue_bin);
+    
+        % convert from double to unsigned integers
+        Final_Red_uint8 = uint8(Final_Red_double);
+        Final_Green_uint8 = uint8(Final_Green_double);
+        Final_Blue_uint8 = uint8(Final_Blue_double);
+    
+        % then convert each colour into frame of size ( 176'length' * 144'width' ) and their number
+        % equal number of frames of original videos 
+        Final_Red = reshape(Final_Red_uint8,144,176);
+        Final_Green = reshape(Final_Green_uint8,s(1),[]);
+        Final_Blue = reshape(Final_Blue_uint8,s(1),[]);
+    
+        % collect every frame from every colour
+       mov(1,Frame).cdata(:,:,1) = Final_Red;
+       mov(1,Frame).cdata(:,:,2) = Final_Green;
+       mov(1,Frame).cdata(:,:,3) = Final_Blue;
+    
+       %a(:,:,:,Frame) =mov(Frame).cdata ;
+     
+     end
+       
+    end
+    %collect the total number bits in error and put it in final_total
+    final_total=0;
+    for i=1:30
+        final_total=final_total+TOTAL(i);
+    end
+    %to get the p of bit error
+    p_of_BE=final_total/18247680;
+      
+    %if p=0.001 the vod name is channelVideo001
+    if(p==0.001)
+        % to play the vod
+        writerObj = VideoWriter('channelVideo001.avi');
+        open(writerObj);
+        writeVideo(writerObj, mov);
+        close(writerObj);
+        % Display video
+        implay('channelVideo001.avi');
+    end
+    %if p=0.1 the vod name is channelVideo1
+    if(p==0.1)
+        % to play the vod
+        writerObj = VideoWriter('channelVideo1.avi');
+        open(writerObj);
+        writeVideo(writerObj, mov);
+        close(writerObj);
+        % Display video
+        implay('channelVideo1.avi');
+    end
+
+end
+    
+

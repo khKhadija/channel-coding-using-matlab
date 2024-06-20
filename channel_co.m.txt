@@ -1,0 +1,247 @@
+
+function [p_of_BE,Throughtput]=channel_co(Name,p)
+    % clc
+    % clear all
+    % Name='highway.avi';
+    % p=0.001;
+    % to read a video and store information in 'a'
+    obj = VideoReader(Name);
+    a = read(obj);
+    % to get the number of frames in the video
+    Frames = get(obj,'NumberOfFrames');
+    %To extract the frames of the video so you can work on them
+    for i = 1:Frames
+            I(i).cdata = a(:,:,:,i);
+    end
+    %generate a new video with the same size as the original video 
+    s = size(I(1).cdata);
+    mov(1:Frames) = struct('cdata',zeros(s(1),s(2),s(3),'uint8'),'colormap',[]);
+    %to calculate the total number of bits of all frames so we can calculate  the throughtput
+    Total_Bits = s(1)*s(2)*s(3)*Frames*8;
+    %to concatenate total transmitted bits 
+    Total_Transmited_Bits = 0;
+    %loop on the number of frames
+    for Frame = 1:Frames
+        %extract the data of each colour in each frame
+        R=I(Frame).cdata(:,:,1);
+        G=I(Frame).cdata(:,:,2); 
+        B=I(Frame).cdata(:,:,3);
+    
+        % convert unsigned integers to double and then from double to binary
+        Rdouble = double(R);
+        Gdouble = double(G);
+        Bdouble = double(B);
+    
+        Rbin = de2bi(Rdouble);
+        Gbin = de2bi(Gdouble);
+        Bbin = de2bi(Bdouble);
+       
+        % reshape from 25344x8 to 1x202752
+        R1=reshape(Rbin,[1,202752]);
+        G1=reshape(Gbin,[1,202752]);
+        B1=reshape(Bbin,[1,202752]);
+    
+        % /1024 to get number of packets in every colour as each packet is 1024 bit
+        n_packet=202752/1024;
+        % get the size of every packet to be [n_packet,1024]
+        packetR1=reshape(R1,[n_packet,1024]);
+        packetG1=reshape(G1,[n_packet,1024]);
+        packetB1=reshape(B1,[n_packet,1024]);
+    
+        % to build the trellis
+        trellis = poly2trellis(7,[171 133]);
+        rate=8/9;
+        %loop on the number of packets 
+        for i=1:n_packet
+            %To encode a certain packet
+            encodedR89(i,:)=convenc(packetR1(i,:), trellis,[1 1 1 0 1 0 1 0 0 1 1 0 1 0 1 0]);
+            encodedG89(i,:)=convenc(packetG1(i,:), trellis,[1 1 1 0 1 0 1 0 0 1 1 0 1 0 1 0]);
+            encodedB89(i,:)=convenc(packetB1(i,:), trellis,[1 1 1 0 1 0 1 0 0 1 1 0 1 0 1 0]);
+    
+            %To apply a certain probability of error p to an encoded packet
+            ErroredR(i,:)=bsc(encodedR89(i,:),p);
+            ErroredG(i,:)=bsc(encodedG89(i,:),p);
+            ErroredB(i,:)=bsc(encodedB89(i,:),p);
+    
+            %To decode a received packet for the first rate
+            decodedR(i,:)=vitdec(ErroredR(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 0 1 0 0 1 1 0 1 0 1 0]);
+            decodedG(i,:)=vitdec(ErroredG(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 0 1 0 0 1 1 0 1 0 1 0]);
+            decodedB(i,:)=vitdec(ErroredB(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 0 1 0 0 1 1 0 1 0 1 0]);  
+            %collect decoded together
+            Rd(i,:)=decodedR(i,:);
+            Gd(i,:)=decodedG(i,:);
+            Bd(i,:)=decodedB(i,:);
+        end
+    
+        %To decode a received packet for the first rate
+        if ((decodedR==packetR1) & (decodedG==packetG1) & (decodedB==packetB1))
+            flag89=1;
+            %to calculate the no of transmitted bits using the current rate so it can be used to calculate the throughtput
+            Total_Transmited_Bits = Total_Transmited_Bits + (1024*(1/rate));
+        else
+            %repeat the same thinge un every rate
+            rate=4/5;
+            for i=1:n_packet        
+                 encodedR45(i,:)=convenc(packetR1(i,:), trellis,[1 1 1 0 1 0 1 0 1 1 1 0 1 0 1 0]);
+                 encodedG45(i,:)=convenc(packetG1(i,:), trellis,[1 1 1 0 1 0 1 0 1 1 1 0 1 0 1 0]);
+                 encodedB45(i,:)=convenc(packetB1(i,:), trellis,[1 1 1 0 1 0 1 0 1 1 1 0 1 0 1 0]);
+        
+                 ErroredR45(i,:)=bsc(encodedR45(i,:),p);
+                 ErroredG45(i,:)=bsc(encodedG45(i,:),p);
+                 ErroredB45(i,:)=bsc(encodedB45(i,:),p);
+        
+                 decodedR45(i,:)=vitdec(ErroredR45(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 0 1 0 1 1 1 0 1 0 1 0]);
+                 decodedG45(i,:)=vitdec(ErroredG45(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 0 1 0 1 1 1 0 1 0 1 0]);
+                 decodedB45(i,:)=vitdec(ErroredB45(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 0 1 0 1 1 1 0 1 0 1 0]); 
+                 Rd(i,:)=decodedR45(i,:);
+                 Gd(i,:)=decodedG45(i,:);
+                 Bd(i,:)=decodedB45(i,:);
+    
+            end
+             if ((decodedR45==packetR1) & (decodedG45==packetG1) & (decodedB45==packetB1))
+                 flag45(Frame)=1;
+                 Total_Transmited_Bits = Total_Transmited_Bits + (1024*(1/rate));
+             else
+                 rate=2/3;
+                 for i=1:n_packet
+                     encodedR23(i,:)=convenc(packetR1(i,:), trellis,[1 1 1 0 1 1 1 0 1 1 1 0 1 1 1 0]);
+                     encodedG23(i,:)=convenc(packetG1(i,:), trellis,[1 1 1 0 1 1 1 0 1 1 1 0 1 1 1 0]);
+                     encodedB23(i,:)=convenc(packetB1(i,:), trellis,[1 1 1 0 1 1 1 0 1 1 1 0 1 1 1 0]);
+    
+                     ErroredR23(i,:)=bsc(encodedR23(i,:),p);
+                     ErroredG23(i,:)=bsc(encodedG23(i,:),p);
+                     ErroredB23(i,:)=bsc(encodedB23(i,:),p);
+    
+                     decodedR23(i,:)=vitdec(ErroredR23(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 1 1 0 1 1 1 0 1 1 1 0]);
+                     decodedG23(i,:)=vitdec(ErroredG23(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 1 1 0 1 1 1 0 1 1 1 0]);
+                     decodedB23(i,:)=vitdec(ErroredB23(i,:),trellis,35,'trunc','hard',[1 1 1 0 1 1 1 0 1 1 1 0 1 1 1 0]);
+                     Rd(i,:)=decodedR23(i,:);
+                     Gd(i,:)=decodedG23(i,:);
+                     Bd(i,:)=decodedB23(i,:);
+                 end
+                 if ((decodedR23==packetR1) & (decodedG23==packetG1) & (decodedB23==packetB1))
+                     flag23(Frame)=1;
+                     Total_Transmited_Bits = Total_Transmited_Bits + (1024*(1/rate));
+                 else
+                     rate=4/7;
+                     for i=1:n_packet
+                         encodedR47(i,:)=convenc(packetR1(i,:), trellis,[1 1 1 1 1 1 1 0 1 1 1 1 1 1 1 0]);
+                         encodedG47(i,:)=convenc(packetG1(i,:), trellis,[1 1 1 1 1 1 1 0 1 1 1 1 1 1 1 0]);
+                         encodedB47(i,:)=convenc(packetB1(i,:), trellis,[1 1 1 1 1 1 1 0 1 1 1 1 1 1 1 0]);
+        
+                         ErroredR47(i,:)=bsc(encodedR47(i,:),p);
+                         ErroredG47(i,:)=bsc(encodedG47(i,:),p);
+                         ErroredB47(i,:)=bsc(encodedB47(i,:),p);
+        
+                         
+                         decodedR47(i,:)=vitdec(ErroredR47(i,:),trellis,35,'trunc','hard',[1 1 1 1 1 1 1 0 1 1 1 1 1 1 1 0]);
+                         decodedG47(i,:)=vitdec(ErroredG47(i,:),trellis,35,'trunc','hard',[1 1 1 1 1 1 1 0 1 1 1 1 1 1 1 0]);
+                         decodedB47(i,:)=vitdec(ErroredB47(i,:),trellis,35,'trunc','hard',[1 1 1 1 1 1 1 0 1 1 1 1 1 1 1 0]);
+                         Rd(i,:)=decodedR47(i,:);
+                         Gd(i,:)=decodedG47(i,:);
+                         Bd(i,:)=decodedB47(i,:);
+                     end
+                     if ((decodedR47==packetR1) & (decodedG47==packetG1) & (decodedB47==packetB1))
+                         flag47(Frame)=1;
+                         Total_Transmited_Bits = Total_Transmited_Bits + (1024*(1/rate));
+                     else
+                         rate=1/2;
+                         for i=1:n_packet
+                             encodedR12(i,:)=convenc(packetR1(i,:), trellis,[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]);
+                             encodedG12(i,:)=convenc(packetG1(i,:), trellis,[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]);
+                             encodedB12(i,:)=convenc(packetB1(i,:), trellis,[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]);
+            
+                             ErroredR12(i,:)=bsc(encodedR12(i,:),p);
+                             ErroredG12(i,:)=bsc(encodedG12(i,:),p);
+                             ErroredB12(i,:)=bsc(encodedB12(i,:),p);
+            
+                             decodedR12(i,:)=vitdec(ErroredR12(i,:),trellis,35,'trunc','hard',[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]);
+                             decodedG12(i,:)=vitdec(ErroredG12(i,:),trellis,35,'trunc','hard',[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]);
+                             decodedB12(i,:)=vitdec(ErroredB12(i,:),trellis,35,'trunc','hard',[1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1]);
+                             
+                             Rd(i,:)=decodedR12(i,:);
+                             Gd(i,:)=decodedG12(i,:);
+                             Bd(i,:)=decodedB12(i,:);
+                         end
+                         flag12(Frame)=1;
+                         Total_Transmited_Bits = Total_Transmited_Bits + (1024*(1/rate));
+                     end
+                 end
+             end
+        end
+        % ( biterr ) : is a build in function take the original packets without
+        %  error and the decoded which contain error and return the number of
+        %  bits in error and bit error rate
+        [numberR BERR] = biterr(packetR1,Rd);
+        [numberG BERG] = biterr(packetG1,Gd);
+        [numberB BERB] = biterr(packetB1,Bd);
+        %collect numbers of bits in error in every colour
+        TOTAL(Frame) =numberR+numberG+numberB;
+        
+    
+        if(p==0.001 || p==0.1)
+       % then reshape to convert binary stream into binary matrix of 8 columns ( 8 : number of bits per pixal ) 
+        Final_Red_bin = reshape(Rd,[],8);
+        Final_Green_bin = reshape(Gd,[],8);
+        Final_Blue_bin = reshape(Bd,[],8);
+    
+        % convert from binary to double
+        Final_Red_double = bi2de(Final_Red_bin);
+        Final_Green_double = bi2de(Final_Green_bin);
+        Final_Blue_double = bi2de(Final_Blue_bin);
+    
+        % convert from double to unsigned integers
+        Final_Red_uint8 = uint8(Final_Red_double);
+        Final_Green_uint8 = uint8(Final_Green_double);
+        Final_Blue_uint8 = uint8(Final_Blue_double);
+    
+        % then convert each colour into frame of size ( 176'length' * 144'width' ) and their number
+        % equal number of frames of original videos 
+        Final_Red = reshape(Final_Red_uint8,s(1),s(2));
+        Final_Green = reshape(Final_Green_uint8,s(1),s(2));
+        Final_Blue = reshape(Final_Blue_uint8,s(1),s(2));
+    
+        mov(1,Frame).cdata(:,:,1) = Final_Red;
+        mov(1,Frame).cdata(:,:,2) = Final_Green;
+        mov(1,Frame).cdata(:,:,3) = Final_Blue;
+    
+     end
+    
+    end
+    %collect the total number bits in error and put it in final_total
+    final_total=0;
+    for i=1:30
+        final_total=final_total+TOTAL(i);
+    end
+    %to get the p of bit error
+    p_of_BE=final_total/Total_Bits; %18247680
+     
+    % to caluculate the data rate
+    Throughtput = Total_Bits/Total_Transmited_Bits;    
+        
+    %if p=0.001 the vod name is channelcoVideo001
+    if(p==0.001)
+        % to play the vod
+        writerObj = VideoWriter('channelcoVideo001.avi');
+        open(writerObj);
+        writeVideo(writerObj, mov);
+        close(writerObj);
+        % Display video
+        implay('channelcoVideo001.avi');
+    end
+    %if p=0.1 the vod name is channelcoVideo1
+    if(p==0.1)
+        % to play the vod
+        writerObj = VideoWriter('channelcoVideo1.avi');
+        open(writerObj);
+        writeVideo(writerObj, mov);
+        close(writerObj);
+        % Display video
+        implay('channelcoVideo1.avi');
+    end
+    
+end
+    
+
+
+  

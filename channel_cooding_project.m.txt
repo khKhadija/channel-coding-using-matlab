@@ -1,0 +1,31 @@
+clc;
+clear all
+
+%probability of error
+p = [0.0001 0.001 0.01 0.1 0.2];
+
+%bit error rate for rate 0.5 
+p_of_BE = zeros(1,5);
+
+% create matrix : first column for bit error rate in incremental redundancy and second column for data rate
+Inc = zeros(5,2);
+
+% probability of error ( 0.001 and 0.1) for no_channel_coding
+no_channel_coding('highway.avi',p(1,2));
+no_channel_coding('highway.avi',p(1,4));
+
+%to get bet error rate and Throughtput
+for i = 1:length(p_of_BE)
+    p_of_BE(1,i) = channel_coding('highway.avi',p(1,i));
+    [Inc(i,1) Inc(i,2)] = channel_co('highway.avi',p(1,i));
+end
+%Plot of the coded y-axis bit error probability vs. x-axis different values of p code rate =1/2.
+figure('Name','Channel_coding rate 1/2 BER');
+plot(p_of_BE,p);
+%Plot of the coded y-axis bit error probability vs. x-axis different values of p using incremental redundancy 
+figure('Name','incremental_redundancy BER');
+plot(reshape(Inc(:,1),1,[]),p);
+%Plot of the y-axis throughput (data rate) vs. x-axis different values of p using incremental redundancy
+figure('Name','incremental_redundancy Throughput');
+plot(reshape(Inc(:,2),1,[]),p);
+
